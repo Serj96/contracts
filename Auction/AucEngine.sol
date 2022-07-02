@@ -21,44 +21,66 @@ contract AucEngine {
     Auction[] public auctions;
 
     event AuctionCreated(uint index, string itemName, uint startingRrice, uint duration);
+    event AuctionEnded(uint index, uint finalPrice, address winner);
 
     constructor() {
         owner = msg.sender;
     }
 
     function createAuction(uint _startingPrice, uint _discountRate, string calldata _item, uint _duration) external {
-        if (_duration == 0) {  // другая форма записи, uint duration = _duration == 0 ? DURATION : _duration;
+        uint duration = _duration == 0 ? DURATION : _duration;
+        
+         /* другая форма записи, if (_duration == 0) {   
             DURATION
         } else {
             _duration
         }
+         */ 
 
         require(_startingPrice >= _discountRate * duration, "Incorect starting price"); // коректное значение startingPrice, что не получилось что стартевая цена уходит в минус
 
         Auction memory newAuction = Auction({
             seller: payable(msg.sender),
-            statrtingPrice: _startingPrice,
+            startingPrice: _startingPrice,
             finalPrice: _startingPrice,
             discountRate: _discountRate,
-            startAt: block.timestampe,
-            endsAt: block.timestampe + duration,
+            startAt: block.timestamp,
+            endsAt: block.timestamp + duration,
             item: _item,
             stopped: false
         });
 
-        auction.push(newAuction); // динамический массив
+        auctions.push(newAuction); // динамический массив
 
-        emit AuctionCreated(auction.length -1, _item, startingPrice, duration);
+        emit AuctionCreated(auctions.length -1, _item, _startingPrice, duration);
     }
 
     function getPriceFor(uint index) public view returns(uint) { //брать цену за определеный аукцион
         Auction memory cAuction = auctions[index];
         require(!cAuction.stopped, "stopped");
         uint elapsed = block.timestamp - cAuction.startAt; // сколько прошло времени
-        uint discount = cAuction.discountRste * elapsed; // чем больше прошло времени, тем больше скидка
+        uint discount = cAuction.discountRate * elapsed; // чем больше прошло времени, тем больше скидка
         return cAuction.startingPrice - discount;
     }
 
-    
+    function buy(uint index) external payable {
+        Auction memory cAuction = auctions[index];
+        require(!cAuction.stopped, "stopped");
+        require(block.timestamp < cAuction.endsAt, "ended");
+        uint cPrice = getPriceFor(index);
+        require(msg.value >= cPrice, "not enough funds");
+        cAuction.stopped = true;
+        cAuction.finalPrice = cPrice;
+        uint refund = msg.value - cPrice; // возврат средств, если сума пришла больше, разница то что нам прислали и ценой в действительности
+        if(refund > 0) {
+            payable(msg.sender).transfer(refund);
+        }
+        cAuction.seller.transfer(
+            cPrice - ((cPrice * FEE) / 100)
+        );// 500
+        // 500 - ((500 * 10) / 100) = 500 - 50 = 450
+        // Math.floor --> JS
 
-    } 
+        emit AuctionEnded(index, cPrice, msg.sender); // что за акцион и за какую сумму ушел товар
+    }
+} 
